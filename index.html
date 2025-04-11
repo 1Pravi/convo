@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Voice Conversation</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>AI Voice Conversation</h1>
+        <button id="startButton">Start Conversation</button>
+        <button id="endButton" style="display: none;">End Conversation</button>
+        <p id="status">Press Start to Begin</p>
+
+        <div id="conversation">
+            <h3>Conversation</h3>
+            <div id="chatBox"></div>
+        </div>
+
+        <div id="feedbackSection" style="display: none;">
+            <h3>Feedback</h3>
+            <p id="feedbackText">Your feedback will appear here after the conversation.</p>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+<style>body {
+    font-family: Arial, sans-serif;
+    text-align: center;
+    background-color: #f5f5f5;
+    margin: 0;
+    padding: 0;
+}
+
+.container {
+    width: 50%;
+    margin: auto;
+    background: white;
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    margin-top: 50px;
+}
+
+button {
+    background-color: #007bff;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    font-size: 16px;
+    cursor: pointer;
+    margin-top: 10px;
+}
+
+button:hover {
+    background-color: #0056b3;
+}
+
+#chatBox {
+    border: 1px solid #ddd;
+    padding: 10px;
+    min-height: 150px;
+    max-height: 300px;
+    overflow-y: auto;
+    background: #fafafa;
+    text-align: left;
+    margin-top: 10px;
+}
+
+#feedbackSection {
+    margin-top: 20px;
+}
+</style>
+<script>
+    document.getElementById("startButton").addEventListener("click", startConversation);
+document.getElementById("endButton").addEventListener("click", endConversation);
+
+const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+recognition.lang = "en-US";
+recognition.interimResults = false;
+recognition.continuous = false;
+
+let conversationActive = false;
+let aiTurn = false;
+
+function startConversation() {
+    document.getElementById("startButton").style.display = "none";
+    document.getElementById("endButton").style.display = "inline";
+    document.getElementById("status").textContent = "You start speaking first...";
+    conversationActive = true;
+    recognition.start();
+}
+
+function endConversation() {
+    conversationActive = false;
+    document.getElementById("endButton").style.display = "none";
+    document.getElementById("status").textContent = "Conversation ended.";
+
+    fetch("/feedback")
+    .then(response => response.json())
+    .then(data => {
+        document.getElementById("feedbackSection").style.display = "block";
+        document.getElementById("feedbackText").textContent = data.feedback;
+    });
+}
+
+recognition.onresult = function(event) {
+    if (!conversationActive) return;
+
+    let userSpeech = event.results[0][0].transcript;
+    updateChat("You", userSpeech);
+    aiTurn = true;
+
+    fetch("/process", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_input: userSpeech })
+    })
+    .then(response => response.json())
+    .then(data => {
+        speak(data.ai_response);
+    })
+    .catch(error => console.error("Error:", error));
+};
+
+recognition.onspeechend = function() {
+    if (!conversationActive) return;
+
+    setTimeout(() => {
+        if (aiTurn) return; // AI is speaking, so don't trigger again
+
+        fetch("/continue")
+        .then(response => response.json())
+        .then(data => {
+            speak(data.ai_response);
+        });
+    }, 3000);
+};
+
+recognition.onerror = function(event) {
+    console.error("Speech recognition error:", event.error);
+};
+
+function speak(text) {
+    aiTurn = true;
+    updateChat("AI", text);
+    let speech = new SpeechSynthesisUtterance(text);
+    speech.lang = "en-US";
+
+    speech.onend = () => {
+        aiTurn = false;
+        recognition.start(); // Start listening again after AI speaks
+    };
+
+    window.speechSynthesis.speak(speech);
+}
+
+function updateChat(speaker, message) {
+    let chatBox = document.getElementById("chatBox");
+    chatBox.innerHTML += `<p><strong>${speaker}:</strong> ${message}</p>`;
+    chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+</script>
+</html>
